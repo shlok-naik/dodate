@@ -9,7 +9,7 @@ widgets, default theme, no styling. Design comes later.
 
 ## Run it
 
-Requires the Flutter SDK (built with Flutter 3.47 / Dart 3.13).
+Requires the Flutter SDK with Dart 3.12 or newer (developed on Flutter 3.47 / Dart 3.13).
 
 ```sh
 flutter pub get
