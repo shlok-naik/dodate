@@ -1,6 +1,7 @@
 import 'package:dodate/main.dart';
 import 'package:dodate/src/app_state.dart';
 import 'package:dodate/src/core/models.dart';
+import 'package:dodate/src/ui/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -110,69 +111,88 @@ void main() {
       return state;
     }
 
-    Future<void> addEssay(WidgetTester tester, {String due = '2026-10-23', String time = '14:00'}) async {
-      await tester.tap(find.byKey(const Key('add-task')));
+    Future<void> tapVisible(WidgetTester tester, Finder f) async {
+      await tester.ensureVisible(f);
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('title-field')), 'History essay');
-      await tester.enterText(find.byKey(const Key('due-date-field')), due);
-      await tester.enterText(find.byKey(const Key('due-time-field')), time);
-      await tester.tap(find.byKey(const Key('size-field')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Big (about 3h)').last);
-      await tester.pumpAndSettle();
-      const stages = ['Research', 'Plan', 'Write', 'Edit'];
-      const minutes = ['45', '30', '90', '30'];
-      for (var i = 0; i < stages.length; i++) {
-        await tester.tap(find.byKey(const Key('add-stage')));
-        await tester.pump();
-        await tester.enterText(find.byKey(Key('stage-name-$i')), stages[i]);
-        await tester.enterText(find.byKey(Key('stage-minutes-$i')), minutes[i]);
-      }
-      await tester.tap(find.byKey(const Key('save-task')));
+      await tester.tap(f);
       await tester.pumpAndSettle();
     }
 
+    Future<void> addEssay(WidgetTester tester, {String due = '2026-10-23', String time = '17:00'}) async {
+      await tester.tap(find.byKey(const Key('add-task')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('title-field')), 'History essay');
+      await tapVisible(tester, find.byKey(Key('due-$due')));
+      await tapVisible(tester, find.byKey(Key('time-$time')));
+      await tapVisible(tester, find.byKey(const Key('size-big')));
+      await tapVisible(tester, find.byKey(const Key('stage-template')));
+      const minutes = ['45', '30', '90', '30'];
+      for (var i = 0; i < minutes.length; i++) {
+        await tester.enterText(find.byKey(Key('stage-minutes-$i')), minutes[i]);
+      }
+      await tapVisible(tester, find.byKey(const Key('save-task')));
+    }
+
     testWidgets('add an assignment and see it spread over the week', (tester) async {
-      await pumpApp(tester);
-      expect(find.text('Tue 2026-10-20 (today)'), findsOneWidget);
+      final state = await pumpApp(tester);
+      expect(find.text('Today'), findsOneWidget);
       await addEssay(tester);
 
-      expect(find.text('History essay: Research'), findsOneWidget);
-      expect(find.text('History essay: Plan'), findsOneWidget);
-      expect(find.text('History essay: Write'), findsOneWidget);
-      expect(find.text('History essay: Edit'), findsOneWidget);
-      expect(find.textContaining('Warning'), findsNothing);
+      final task = state.tasks.single;
+      expect(task.stages.map((s) => s.name), ['Research', 'Plan', 'Write', 'Edit']);
+      expect(task.dueTime, '17:00');
+      expect(find.byType(WarningCard), findsNothing);
+
+      // Each day of the strip shows its own stage.
+      expect(find.text('Research'), findsOneWidget);
+      for (final (day, stage) in [('2026-10-21', 'Plan'), ('2026-10-22', 'Write'), ('2026-10-23', 'Edit')]) {
+        await tester.tap(find.byKey(Key('day-$day')));
+        await tester.pumpAndSettle();
+        expect(find.text(stage), findsOneWidget, reason: day);
+      }
     });
 
-    testWidgets('mark a session done, then miss a day and see it move forward', (tester) async {
+    testWidgets('tick a session off, then miss a day and see it move forward', (tester) async {
       final state = await pumpApp(tester);
       await addEssay(tester);
+      final research = state.tasks.single.stages[0].id;
 
-      await tester.tap(find.text('History essay: Research'));
+      await tester.tap(find.byKey(Key('check-$research-planned')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('action-done')));
-      await tester.pumpAndSettle();
-      expect(find.text('Done 45m'), findsOneWidget);
+      expect(find.byKey(Key('check-$research-done')), findsOneWidget);
+      expect(find.text('All done for today. Nice work.'), findsOneWidget);
 
       // Wednesday passes with nothing done; it is now Thursday.
       clock = DateTime(2026, 10, 22, 8);
       await state.refresh();
       await tester.pumpAndSettle();
-      expect(find.text('Missed 30m, moved to later days'), findsOneWidget);
-      expect(find.text('Thu 2026-10-22 (today)'), findsOneWidget);
-      // Plan, Write and Edit are all still planned (Thu and Fri).
-      expect(find.text('History essay: Plan'), findsNWidgets(2)); // missed Wed + planned
-      expect(find.text('History essay: Write'), findsOneWidget);
-      expect(find.text('History essay: Edit'), findsOneWidget);
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('Plan'), findsOneWidget);
+      expect(find.text('Write'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('day-2026-10-21')));
+      await tester.pumpAndSettle();
+      expect(find.text('Yesterday'), findsOneWidget);
+      expect(find.text('Moved forward'), findsOneWidget);
     });
 
     testWidgets('warns straight away when there is not enough time', (tester) async {
       await pumpApp(tester);
       await addEssay(tester, due: '2026-10-21', time: '09:00');
-      expect(find.text('Warning'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('History essay needs more time'), findsWidgets);
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Warning: Not enough time for "History essay"'), findsOneWidget);
+      expect(find.byType(WarningCard), findsOneWidget);
+    });
+
+    testWidgets('marking a day off moves its work elsewhere', (tester) async {
+      await pumpApp(tester);
+      await addEssay(tester);
+      await tester.tap(find.byKey(const Key('block-2026-10-20')));
+      await tester.pumpAndSettle();
+      expect(find.text('Research'), findsNothing);
+      expect(find.textContaining('Day off'), findsWidgets);
     });
 
     testWidgets('needs more time from the assignments screen', (tester) async {
@@ -188,7 +208,11 @@ void main() {
       await tester.tap(find.byKey(const Key('minutes-ok')));
       await tester.pumpAndSettle();
       expect(state.tasks.single.stages[2].minutes, 150);
-      expect(find.textContaining('of 2h30'), findsOneWidget);
+      expect(find.text('0m of 2h30'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('limit-120')));
+      await tester.pumpAndSettle();
+      expect(state.dailyLimit, 120);
     });
   });
 }

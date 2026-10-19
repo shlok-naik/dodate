@@ -36,9 +36,14 @@ const int minStageMinutes = 15;
 enum WarningType { notEnoughTime, overdue }
 
 class PlanWarning {
-  PlanWarning(this.taskId, this.type, this.message, {this.shortfall = 0});
+  PlanWarning(this.taskId, this.type, this.headline, this.message, {this.shortfall = 0});
   final String taskId;
   final WarningType type;
+
+  /// Short title, e.g. 'History essay needs more time'.
+  final String headline;
+
+  /// What is wrong and what the student can do about it.
   final String message;
   final int shortfall;
 }
@@ -186,17 +191,21 @@ Plan buildPlan({
     }
 
     if (overdue) {
-      warnings.add(PlanWarning(task.id, WarningType.overdue,
-          '"${task.title}" is past its deadline with ${formatMinutes(remaining)} left. It has been put on today.',
+      warnings.add(PlanWarning(task.id, WarningType.overdue, '${task.title} is past its deadline',
+          '${formatMinutes(remaining)} is left. It\'s on today\'s list. Mark it complete if you\'ve handed it in.',
           shortfall: remaining));
     } else if (overflow > 0) {
       final free = window.fold(0, (a, d) => a + math.max(0, d.cap - d.load));
       final shortfall = math.max(overflow, remaining - free);
-      warnings.add(PlanWarning(task.id, WarningType.notEnoughTime,
-          'Not enough time for "${task.title}": ${formatMinutes(remaining)} of work, '
-          'only ${formatMinutes(free)} free before it is due at your daily limit of '
-          '${formatMinutes(dailyLimit)}. Some days are over the limit. Start now, cut scope, '
-          'or ask for an extension.',
+      // remaining <= free happens when the time fits in total but the
+      // sessions can't be split finely enough to stay under the limit.
+      final detail = remaining > free
+          ? 'It has ${formatMinutes(remaining)} of work but only ${formatMinutes(free)} fits under your '
+              '${formatMinutes(dailyLimit)}-a-day limit before it\'s due, so some days go over.'
+          : 'Its ${formatMinutes(remaining)} of work only just fits before it\'s due, so some days go '
+              'over your ${formatMinutes(dailyLimit)}-a-day limit.';
+      warnings.add(PlanWarning(task.id, WarningType.notEnoughTime, '${task.title} needs more time',
+          '$detail Start today, trim a stage, or ask for an extension.',
           shortfall: shortfall));
     }
   }

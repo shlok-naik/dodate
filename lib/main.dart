@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'src/app_state.dart';
+import 'src/ui/theme.dart';
 import 'src/ui/week_screen.dart';
 
 Future<void> main() async {
@@ -37,6 +38,12 @@ class _DodateAppState extends State<DodateApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(title: 'Dodate', home: WeekScreen(state: widget.state));
+    return MaterialApp(
+      title: 'Dodate',
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      home: WeekScreen(state: widget.state),
+    );
   }
 }

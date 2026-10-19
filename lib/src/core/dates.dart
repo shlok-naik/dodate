@@ -31,3 +31,44 @@ String formatMinutes(int minutes) {
   if (m == 0) return '${h}h';
   return '${h}h${m.toString().padLeft(2, '0')}';
 }
+
+const _fullDayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const _monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/// 'Monday'
+String weekdayName(String date) => _fullDayNames[_parse(date).weekday - 1];
+
+/// 'M' for the week strip.
+String weekdayInitial(String date) => _fullDayNames[_parse(date).weekday - 1][0];
+
+int dayOfMonth(String date) => _parse(date).day;
+
+/// 'Fri 23 Oct'
+String shortDate(String date) {
+  final d = _parse(date);
+  return '${_dayNames[d.weekday - 1]} ${d.day} ${_monthNames[d.month - 1]}';
+}
+
+/// '19 – 25 Oct' or '27 Oct – 2 Nov'
+String weekRangeLabel(String monday) {
+  final a = _parse(monday), b = _parse(addDays(monday, 6));
+  return a.month == b.month
+      ? '${a.day} – ${b.day} ${_monthNames[b.month - 1]}'
+      : '${a.day} ${_monthNames[a.month - 1]} – ${b.day} ${_monthNames[b.month - 1]}';
+}
+
+/// 'Today', 'Tomorrow', 'Yesterday' or the weekday name.
+String relativeDayName(String date, String today) => switch (diffDays(today, date)) {
+      0 => 'Today',
+      1 => 'Tomorrow',
+      -1 => 'Yesterday',
+      _ => weekdayName(date),
+    };
+
+/// '1h 15m' style for headings.
+String formatMinutesLong(int minutes) {
+  final h = minutes ~/ 60, m = minutes % 60;
+  if (h == 0) return '$m min';
+  if (m == 0) return '${h}h';
+  return '${h}h ${m}m';
+}
