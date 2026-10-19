@@ -4,8 +4,11 @@ A minimalist weekly planner for students (GCSE, A-Level, university) that turns
 assignment **due dates** into **do dates**: small, balanced pieces of work spread
 over the days before each deadline.
 
-This is the functional MVP. The UI is deliberately plain: stock Flutter Material
-widgets, default theme, no styling. Design comes later.
+Design direction: calm, warm minimalism. A sage-tinted paper background, one
+spruce accent, amber (never red) for "needs more time", and a soft colour per
+assignment. Bricolage Grotesque for headings and Figtree for text, both bundled
+under the OFL. Light and dark themes come from one token set in
+`lib/src/ui/theme.dart`.
 
 ## Run it
 
@@ -46,7 +49,7 @@ lib/src/core/scheduler.dart   the planner (pure Dart, no Flutter): splitting, pl
 lib/src/core/models.dart      Task, Stage, WorkLog, PlannedItem, TaskSize
 lib/src/core/dates.dart       'YYYY-MM-DD' date helpers
 lib/src/app_state.dart        app state + persistence (shared_preferences, JSON)
-lib/src/ui/                   week view, add-assignment form, assignments list, stage actions
+lib/src/ui/                   theme tokens, week view, add-assignment sheet, assignments list, stage actions
 test/scheduler_test.dart      planner tests
 test/app_test.dart            state/persistence tests and end-to-end widget tests
 ```
@@ -102,4 +105,4 @@ day or an overrunning stage therefore rebalances automatically.
 ## Not built (intentionally or yet)
 
 Priorities, hourly time-blocking, notifications, editing assignments, accounts
-and sync, recurring tasks, and any visual design.
+and sync, recurring tasks, app icon and splash screen.
