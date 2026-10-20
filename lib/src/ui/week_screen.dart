@@ -1,40 +1,38 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../app_state.dart';
 import '../core/dates.dart';
-import '../core/models.dart';
-import 'add_task_screen.dart';
+import 'day_screen.dart';
+import 'dodo.dart';
 import 'stage_actions.dart';
-import 'tasks_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-/// The home screen: a Monday-to-Sunday strip showing how full each day is,
-/// and the selected day's work below it.
+/// Monday to Sunday: a load chart against the daily limit, then each day's work.
 class WeekScreen extends StatefulWidget {
-  const WeekScreen({super.key, required this.state});
+  const WeekScreen({super.key, required this.state, required this.onOpenDay});
 
   final AppState state;
+  final ValueChanged<String> onOpenDay;
 
   @override
   State<WeekScreen> createState() => _WeekScreenState();
 }
 
 class _WeekScreenState extends State<WeekScreen> {
-  int _weekOffset = 0;
-  String? _selected;
+  int _offset = 0;
+  int _dir = 1;
+  bool _scrolled = false;
 
   AppState get state => widget.state;
 
-  void _changeWeek(int delta) {
+  void _go(int offset) {
+    if (offset == _offset) return;
     setState(() {
-      _weekOffset = delta == 0 ? 0 : _weekOffset + delta;
-      final monday = addDays(mondayOf(state.today), 7 * _weekOffset);
-      final today = state.today;
-      _selected = diffDays(monday, today) >= 0 && diffDays(monday, today) < 7 ? today : monday;
+      _dir = (offset - _offset).sign;
+      _offset = offset;
     });
   }
 
@@ -45,411 +43,300 @@ class _WeekScreenState extends State<WeekScreen> {
       builder: (context, _) {
         final c = context.colors;
         final today = state.today;
-        final monday = addDays(mondayOf(today), 7 * _weekOffset);
-        var selected = _selected ?? today;
-        if (diffDays(monday, selected) < 0 || diffDays(monday, selected) > 6) selected = monday;
-        final warnings = state.plan.warnings;
+        final monday = addDays(mondayOf(today), 7 * _offset);
+        final days = [
+          for (var i = 0; i < 7; i++)
+            () {
+              final d = addDays(monday, i);
+              final entries = state.entriesFor(d);
+              final mins = entries.where((e) => e.status != EntryStatus.missed).fold(0, (a, e) => a + e.item.minutes);
+              return (d, entries, mins);
+            }(),
+        ];
+        final weekMins = days.fold(0, (a, d) => a + d.$3);
+        final title = switch (_offset) {
+          0 => 'This week',
+          1 => 'Next week',
+          -1 => 'Last week',
+          _ => _offset > 1 ? 'Later' : 'Earlier',
+        };
 
-        return Scaffold(
-          floatingActionButton: FloatingActionButton.extended(
-            key: const Key('add-task'),
-            onPressed: () => showAddTaskSheet(context, state),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Assignment'),
-          ),
-          body: SafeArea(
-            bottom: false,
-            child: GestureDetector(
-              onHorizontalDragEnd: (d) {
-                final v = d.primaryVelocity ?? 0;
-                if (v.abs() > 300) _changeWeek(v < 0 ? 1 : -1);
-              },
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                children: [
-                  Row(
-                    children: [
-                      Text('dodate',
-                          style: TextStyle(
-                              fontFamily: displayFont, fontWeight: FontWeight.w700, fontSize: 24, color: c.accent)),
-                      const Spacer(),
-                      IconButton(
-                        key: const Key('open-tasks'),
-                        tooltip: 'Assignments',
-                        icon: const Icon(Icons.checklist_rounded),
-                        onPressed: () => Navigator.push(
-                            context, MaterialPageRoute(builder: (_) => TasksScreen(state: state))),
+        return NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (n.depth == 0 && (n.metrics.pixels > 0) != _scrolled) setState(() => _scrolled = n.metrics.pixels > 0);
+            return false;
+          },
+          child: Column(children: [
+            AnimatedContainer(
+              duration: motion(context, 200),
+              padding: EdgeInsets.fromLTRB(24, MediaQuery.paddingOf(context).top + 24, 24, 16),
+              decoration: BoxDecoration(color: c.bg, border: Border(bottom: BorderSide(color: _scrolled ? c.line : c.bg))),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(
+                  height: 48,
+                  child: Row(children: [
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: motion(context, 220),
+                        layoutBuilder: (cur, prev) => Stack(alignment: Alignment.centerLeft, children: [...prev, if (cur != null) cur]),
+                        child: Text(title, key: ValueKey(title), maxLines: 1, overflow: TextOverflow.ellipsis, style: Styles.display(c.ink)),
                       ),
+                    ),
+                    IconButton(key: const Key('prev-week'), tooltip: 'Previous week', onPressed: () => _go(_offset - 1), icon: Icon(Icons.chevron_left_rounded, color: c.ink)),
+                    IconButton(key: const Key('next-week'), tooltip: 'Next week', onPressed: () => _go(_offset + 1), icon: Icon(Icons.chevron_right_rounded, color: c.ink)),
+                    const SettingsButton(),
+                  ]),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: 24,
+                  child: Row(children: [
+                    Expanded(
+                      child: Text('${weekRangeLabel(monday)} · ${weekMins > 0 ? '${formatMinutesLong(weekMins)} of homework' : 'no homework'}',
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: c.muted)),
+                    ),
+                    AnimatedSwitcher(
+                      duration: motion(context, 200),
+                      child: _offset == 0
+                          ? const SizedBox.shrink()
+                          : GestureDetector(
+                              key: const Key('this-week'),
+                              onTap: () => _go(0),
+                              child: Text('Back to this week', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: c.accent)),
+                            ),
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 16),
+                _LoadChart(key: ValueKey(monday), days: days.map((d) => (d.$1, d.$3)).toList(), state: state),
+              ]),
+            ),
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v.abs() > 300) _go(_offset + (v < 0 ? 1 : -1));
+                },
+                child: AnimatedSwitcher(
+                  duration: motion(context, 240),
+                  switchInCurve: smooth,
+                  transitionBuilder: (child, a) => FadeTransition(
+                    opacity: a,
+                    child: SlideTransition(
+                      position: Tween(begin: Offset((child.key == ValueKey(monday) ? 1 : -1) * _dir * 0.08, 0), end: Offset.zero).animate(a),
+                      child: child,
+                    ),
+                  ),
+                  child: ListView(
+                    key: ValueKey(monday),
+                    padding: EdgeInsets.fromLTRB(24, 0, 24, 136 + MediaQuery.paddingOf(context).bottom),
+                    children: [
+                      if (weekMins == 0 && diffDays(today, addDays(monday, 6)) >= 0)
+                        Stagger(
+                          index: 0,
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 16),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(24)),
+                            child: Row(children: [
+                              const Dodo(mood: DodoMood.chill, size: 64),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text('Quiet week.', style: Styles.h3(c.ink)),
+                                  const SizedBox(height: 4),
+                                  Text('Nothing planned. Enjoy the break.', style: TextStyle(fontSize: 14, color: c.muted)),
+                                ]),
+                              ),
+                            ]),
+                          ),
+                        ),
+                      for (final (i, d) in days.indexed) Stagger(index: i + 1, child: _DayBlock(state: state, date: d.$1, entries: d.$2, minutes: d.$3, onOpen: () => widget.onOpenDay(d.$1))),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Text(weekRangeLabel(monday), style: Theme.of(context).textTheme.titleMedium),
-                      const Spacer(),
-                      if (_weekOffset != 0)
-                        TextButton(onPressed: () => _changeWeek(0), child: const Text('This week')),
-                      IconButton(
-                        key: const Key('prev-week'),
-                        tooltip: 'Previous week',
-                        onPressed: () => _changeWeek(-1),
-                        icon: const Icon(Icons.chevron_left_rounded),
-                      ),
-                      IconButton(
-                        key: const Key('next-week'),
-                        tooltip: 'Next week',
-                        onPressed: () => _changeWeek(1),
-                        icon: const Icon(Icons.chevron_right_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  _WeekStrip(
-                    state: state,
-                    monday: monday,
-                    selected: selected,
-                    onSelect: (d) => setState(() => _selected = d),
-                  ),
-                  if (warnings.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    for (final w in warnings)
-                      Padding(padding: const EdgeInsets.only(bottom: 10), child: WarningCard(warning: w)),
-                  ],
-                  const SizedBox(height: 24),
-                  _DayDetail(state: state, date: selected),
-                ],
+                ),
               ),
             ),
-          ),
+          ]),
         );
       },
     );
   }
 }
 
-class _WeekStrip extends StatelessWidget {
-  const _WeekStrip({required this.state, required this.monday, required this.selected, required this.onSelect});
+/// One bar per day; the dashed line is the daily limit.
+class _LoadChart extends StatelessWidget {
+  const _LoadChart({super.key, required this.days, required this.state});
 
+  final List<(String, int)> days;
   final AppState state;
-  final String monday;
-  final String selected;
-  final ValueChanged<String> onSelect;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final today = state.today;
-    final dueDates = {for (final t in state.tasks) if (!t.completed) t.dueDate};
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-      decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(20)),
-      child: Row(
-        children: [
-          for (var i = 0; i < 7; i++)
-            Expanded(
-              child: Builder(builder: (context) {
-                final date = addDays(monday, i);
-                final minutes = state.entriesFor(date).fold(0, (a, e) => a + e.item.minutes);
-                final blocked = state.blockedDates.contains(date);
-                final isToday = date == today;
-                final isSelected = date == selected;
-                final fill = math.min(1.0, minutes / state.dailyLimit);
-                final over = minutes > state.dailyLimit;
-                return Semantics(
-                  button: true,
-                  label: '${shortDate(date)}, ${formatMinutesLong(minutes)} planned',
-                  child: InkWell(
-                    key: Key('day-$date'),
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => onSelect(date),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Column(
-                        children: [
-                          Text(weekdayInitial(date),
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.muted)),
-                          const SizedBox(height: 6),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 34,
-                            height: 34,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: isToday ? c.accent : Colors.transparent,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: isSelected && !isToday ? c.ink : Colors.transparent, width: 1.5),
-                            ),
-                            child: Text('${dayOfMonth(date)}',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15,
-                                    color: isToday ? c.onAccent : c.ink)),
-                          ),
-                          const SizedBox(height: 8),
-                          // How full the day is, against the daily limit.
-                          Container(
-                            width: 8,
-                            height: 30,
-                            alignment: Alignment.bottomCenter,
-                            decoration: BoxDecoration(
-                                color: c.surfaceAlt, borderRadius: BorderRadius.circular(4)),
-                            child: blocked
-                                ? null
-                                : FractionallySizedBox(
-                                    heightFactor: fill,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                          color: over ? c.warn : c.accent,
-                                          borderRadius: BorderRadius.circular(4)),
-                                    ),
-                                  ),
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            width: 5,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: dueDates.contains(date) ? c.ink : Colors.transparent,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DayDetail extends StatelessWidget {
-  const _DayDetail({required this.state, required this.date});
-
-  final AppState state;
-  final String date;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final text = Theme.of(context).textTheme;
-    final today = state.today;
-    final entries = state.entriesFor(date);
-    final planned = entries.where((e) => e.status == EntryStatus.planned).toList();
-    final total = entries.where((e) => e.status != EntryStatus.missed).fold(0, (a, e) => a + e.item.minutes);
-    final blocked = state.blockedDates.contains(date);
-    final isPast = date.compareTo(today) < 0;
-    final due = state.tasks.where((t) => t.dueDate == date && !t.completed).toList()
-      ..sort((a, b) => a.dueTime.compareTo(b.dueTime));
-    final allDone = date == today && planned.isEmpty && entries.any((e) => e.status == EntryStatus.done);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(relativeDayName(date, today), style: text.displaySmall),
-        const SizedBox(height: 4),
-        Text(
-          blocked
-              ? '${shortDate(date)} · Day off'
-              : '${shortDate(date)} · ${formatMinutesLong(total)} of ${formatMinutesLong(state.dailyLimit)}',
-          style: text.bodySmall?.copyWith(fontSize: 14),
+    const h = 32.0;
+    final limit = state.dailyLimit;
+    final maxM = math.max(limit, days.fold(0, (a, d) => math.max(a, d.$2)));
+    return SizedBox(
+      height: h,
+      child: Stack(children: [
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: limit / maxM * h,
+          child: CustomPaint(size: const Size(double.infinity, 1.5), painter: _Dashes(c.line)),
         ),
-        const SizedBox(height: 16),
-        for (final t in due)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(children: [
-              Icon(Icons.outlined_flag_rounded, size: 18, color: c.muted),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text.rich(TextSpan(children: [
-                  TextSpan(text: 'Due ${t.dueTime}  ', style: TextStyle(color: c.muted, fontSize: 14)),
-                  TextSpan(text: t.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                ])),
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          for (final (i, (d, m)) in days.indexed) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: state.blockedDates.contains(d) ? 4 : math.max(4, m / maxM * h)),
+                duration: motion(context, 500 + i * 40),
+                curve: Curves.easeOutBack,
+                builder: (context, v, _) {
+                  final isToday = d == state.today, over = m > limit, past = d.compareTo(state.today) < 0;
+                  return Container(
+                    height: v.clamp(0, h),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: (over ? c.warnBar : isToday ? c.accent : m > 0 ? c.muted : c.line)
+                          .withValues(alpha: past ? 0.25 : isToday || over ? 1 : 0.35),
+                    ),
+                  );
+                },
               ),
-            ]),
-          ),
-        if (allDone)
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: c.accentSoft, borderRadius: BorderRadius.circular(16)),
-            child: Row(children: [
-              Icon(Icons.check_circle_rounded, color: c.accent),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text('All done for today. Nice work.',
-                    style: TextStyle(fontWeight: FontWeight.w600, color: c.ink)),
-              ),
-            ]),
-          ),
-        if (entries.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 28),
-            child: Column(children: [
-              Icon(blocked ? Icons.beach_access_outlined : Icons.wb_sunny_outlined, size: 32, color: c.muted),
-              const SizedBox(height: 10),
-              Text(
-                blocked
-                    ? 'Day off. Work has been moved to other days.'
-                    : state.tasks.isEmpty
-                        ? 'Add an assignment and Dodate will spread\nthe work across your week.'
-                        : 'Nothing planned. Enjoy it.',
-                textAlign: TextAlign.center,
-                style: text.bodySmall?.copyWith(fontSize: 15),
-              ),
-            ]),
-          ),
-        for (final e in entries)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _SessionCard(state: state, entry: e, date: date),
-          ),
-        if (!isPast)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              key: Key('block-$date'),
-              onPressed: () => state.toggleBlocked(date),
-              icon: Icon(blocked ? Icons.event_available_outlined : Icons.event_busy_outlined, size: 18),
-              label: Text(blocked ? 'I can work this day' : 'I can\'t work this day'),
             ),
-          ),
-      ],
+          ],
+        ]),
+      ]),
     );
   }
 }
 
-class _SessionCard extends StatelessWidget {
-  const _SessionCard({required this.state, required this.entry, required this.date});
+class _Dashes extends CustomPainter {
+  _Dashes(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..color = color
+      ..strokeWidth = size.height;
+    for (var x = 0.0; x < size.width; x += 7) {
+      canvas.drawLine(Offset(x, 0), Offset(math.min(x + 4, size.width), 0), p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_Dashes o) => o.color != color;
+}
+
+class _DayBlock extends StatelessWidget {
+  const _DayBlock({required this.state, required this.date, required this.entries, required this.minutes, required this.onOpen});
 
   final AppState state;
-  final DayEntry entry;
   final String date;
+  final List<DayEntry> entries;
+  final int minutes;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final item = entry.item;
-    final done = entry.status == EntryStatus.done;
-    final missed = entry.status == EntryStatus.missed;
-    final planned = entry.status == EntryStatus.planned;
-    final minutes = done ? entry.loggedMinutes : item.minutes;
-
+    final today = state.today;
+    final isToday = date == today;
+    final blocked = state.blockedDates.contains(date);
+    final due = state.tasks.where((t) => t.dueDate == date && !t.completed).toList();
     return Opacity(
-      opacity: missed ? 0.6 : 1,
-      child: Material(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: planned
-              ? () => showStageActions(context, state, item.taskId, item.stageId, plannedMinutes: item.minutes)
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
-            child: Row(
-              children: [
-                TintBadge(taskId: item.taskId, title: item.taskTitle),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.taskTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: c.muted)),
-                      const SizedBox(height: 2),
-                      Text(
-                        item.stageName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: done ? c.muted : c.ink,
-                          decoration: done ? TextDecoration.lineThrough : null,
-                          decorationColor: c.muted,
-                        ),
-                      ),
-                      if (missed) ...[
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                              color: c.surfaceAlt, borderRadius: BorderRadius.circular(8)),
-                          child: Text('Moved forward',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.muted)),
-                        ),
-                      ],
-                    ],
-                  ),
+      opacity: date.compareTo(today) < 0 ? 0.45 : 1,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.line))),
+        child: Column(children: [
+          Pressable(
+            key: Key('week-day-$date'),
+            label: 'Open ${weekdayName(date)} ${dayOfMonth(date)}',
+            scale: 0.98,
+            onTap: onOpen,
+            child: SizedBox(
+              height: 48,
+              child: Row(children: [
+                SizedBox(
+                  width: 44,
+                  child: Text('${dayOfMonth(date)}',
+                      style: TextStyle(fontFamily: displayFont, fontWeight: FontWeight.w800, fontSize: 28, letterSpacing: -0.8, color: isToday ? c.accent : c.ink)),
                 ),
-                Text(formatMinutes(minutes),
+                Expanded(
+                  child: Text(relativeDayName(date, today) == 'Yesterday' ? weekdayName(date) : relativeDayName(date, today),
+                      style: TextStyle(fontWeight: FontWeight.w600, color: isToday ? c.accent : c.muted)),
+                ),
+                Text(blocked ? 'Off' : minutes > 0 ? formatMinutes(minutes) : 'None',
                     style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: c.muted,
+                        color: minutes > state.dailyLimit ? c.warn : c.muted,
                         fontFeatures: const [FontFeature.tabularFigures()])),
-                const SizedBox(width: 4),
-                if (!missed)
-                  IconButton(
-                    key: Key('check-${item.stageId}-${entry.status.name}'),
-                    tooltip: done ? 'Done' : 'Mark done',
-                    onPressed: planned
-                        ? () {
-                            HapticFeedback.lightImpact();
-                            state.logWork(item.taskId, item.stageId, item.minutes);
-                          }
-                        : null,
-                    icon: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
-                      child: done
-                          ? Icon(Icons.check_circle_rounded, key: const ValueKey('done'), color: c.accent, size: 28)
-                          : Icon(Icons.radio_button_unchecked_rounded,
-                              key: const ValueKey('todo'), color: c.line, size: 28),
-                    ),
-                  )
-                else
-                  const SizedBox(width: 12),
-              ],
+              ]),
             ),
           ),
-        ),
+          for (final t in due)
+            Pressable(
+              onTap: () => openTaskDetail(context, state, t.id),
+              child: SizedBox(
+                height: 40,
+                child: Row(children: [
+                  SizedBox(width: 44, child: Align(alignment: Alignment.centerLeft, child: Icon(Icons.flag_rounded, size: 16, color: c.tintFor(t.id).fg))),
+                  Expanded(
+                    child: Text('${t.title} due ${t.dueTime}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, color: c.tintFor(t.id).fg)),
+                  ),
+                ]),
+              ),
+            ),
+          for (final e in entries)
+            Pressable(
+              scale: 0.98,
+              onTap: e.status == EntryStatus.planned
+                  ? () => showStageActions(context, state, e.item.taskId, e.item.stageId, plannedMinutes: date == today ? e.item.minutes : null)
+                  : () => openTaskDetail(context, state, e.item.taskId),
+              child: SizedBox(
+                height: 40,
+                child: Row(children: [
+                  SizedBox(width: 44, child: Align(alignment: Alignment.centerLeft, child: TintDot(color: c.tintFor(e.item.taskId).fg))),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: e.item.taskTitle),
+                        if ((state.taskById(e.item.taskId)?.stages.length ?? 1) > 1)
+                          TextSpan(text: '  ${e.item.stageName}', style: TextStyle(color: c.muted)),
+                        if (e.status == EntryStatus.missed) TextSpan(text: '  moved', style: TextStyle(color: c.muted, fontSize: 13)),
+                      ]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: e.status == EntryStatus.planned ? c.ink : c.muted,
+                        decoration: e.status == EntryStatus.done ? TextDecoration.lineThrough : null,
+                        decorationColor: c.muted,
+                      ),
+                    ),
+                  ),
+                  Text(formatMinutes(e.status == EntryStatus.done ? e.loggedMinutes : e.item.minutes),
+                      style: TextStyle(fontSize: 14, color: c.muted, fontFeatures: const [FontFeature.tabularFigures()])),
+                ]),
+              ),
+            ),
+          if (blocked)
+            SizedBox(
+              height: 40,
+              child: Row(children: [
+                Transform.translate(offset: const Offset(-8, 0), child: const SizedBox(width: 44, child: Dodo(mood: DodoMood.sleep, size: 40))),
+                Text('Day off. Shhh.', style: TextStyle(color: c.muted)),
+              ]),
+            ),
+        ]),
       ),
     );
   }
-}
-
-/// Opens the add-assignment sheet (kept here so the week screen owns the flow).
-Future<void> showAddTaskSheet(BuildContext context, AppState state) async {
-  final task = await showModalBottomSheet<Task>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (_) => AddTaskSheet(state: state),
-  );
-  if (task == null || !context.mounted) return;
-  final warnings = state.plan.warnings.where((w) => w.taskId == task.id).toList();
-  if (warnings.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${task.title} is spread across your week.')));
-    return;
-  }
-  // Warn straight away if the deadline can't be met.
-  await showDialog<void>(
-    context: context,
-    builder: (c) => AlertDialog(
-      icon: Icon(Icons.hourglass_bottom_rounded, color: context.colors.warn),
-      title: Text(warnings.first.headline, textAlign: TextAlign.center),
-      content: Text(warnings.first.message, textAlign: TextAlign.center),
-      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
-    ),
-  );
 }

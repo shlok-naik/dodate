@@ -166,6 +166,24 @@ class AppState extends ChangeNotifier {
     await _changed();
   }
 
+  /// Removes the work logged on a stage today (un-ticks it).
+  Future<void> unlogToday(String stageId) async {
+    final t = today;
+    logs.removeWhere((l) => l.stageId == stageId && l.date == t);
+    await _changed();
+  }
+
+  /// The smallest daily limit (30-minute steps, up to 8h) at which [taskId]
+  /// fits before its deadline, or null if none does.
+  int? limitToFit(String taskId) {
+    for (var limit = dailyLimit + 30; limit <= 480; limit += 30) {
+      final p = buildPlan(
+          tasks: tasks, logs: logs, today: today, nowTime: nowTime, dailyLimit: limit, blockedDates: blockedDates);
+      if (!p.warnings.any((w) => w.taskId == taskId)) return limit;
+    }
+    return null;
+  }
+
   /// The stage is finished, even if it took less than estimated.
   Future<void> finishStage(String taskId, String stageId) async {
     stageById(taskId, stageId)?.done = true;

@@ -29,7 +29,9 @@ flutter run -d chrome     # or in a browser
    Stages without minutes share the size's time equally.
 4. **Automatic plan**: stages are spread across the days before the deadline,
    balancing each day's total workload across all assignments.
-5. **Weekly view**: Monday to Sunday, what to do each day; Previous/Next weeks.
+5. **Day, Week and Deadlines** tabs: today's pieces with a progress ring and
+   a week strip (swipe between days), the week with a load chart against
+   your daily limit, and every assignment by deadline with progress rings.
 6. **Rebalancing**:
    - tap a planned item and choose **Done**, **Log time worked today**,
      **Needs more time**, or **Stage finished**;
@@ -40,7 +42,9 @@ flutter run -d chrome     # or in a browser
    (at the daily limit, given other deadlines), a dialog and a warning on the
    week view say so. Overdue work is flagged and put on today.
 
-The one setting is the **daily limit** (default 3h) in *Assignments*.
+Settings (the sliders icon): the **daily limit** (default 3h) and light/dark/auto
+appearance. Every change can be undone from the toast, and the Dodo mascot,
+confetti and animations follow the system's reduced-motion setting.
 
 ## Code layout
 

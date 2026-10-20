@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'src/app_state.dart';
 import 'src/ui/theme.dart';
-import 'src/ui/week_screen.dart';
+import 'src/ui/feedback.dart';
+import 'src/ui/shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,12 +39,21 @@ class _DodateAppState extends State<DodateApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Dodate',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      home: WeekScreen(state: widget.state),
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) => MaterialApp(
+        title: 'Dodate',
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(Brightness.light),
+        darkTheme: buildTheme(Brightness.dark),
+        themeMode: switch (widget.state.theme) {
+          'light' => ThemeMode.light,
+          'dark' => ThemeMode.dark,
+          _ => ThemeMode.system,
+        },
+        builder: (context, child) => AppFeedback(state: widget.state, child: child!),
+        home: HomeShell(state: widget.state),
+      ),
     );
   }
 }
